@@ -1,0 +1,44 @@
+site: weread
+name: highlights
+description: List your highlights (underlines) in a book
+domain: weread.qq.com
+strategy: cookie
+browser: true
+
+args:
+  book-id:
+    positional: true
+    required: true
+    type: str
+    description: Book ID (from shelf or search results)
+  limit:
+    type: int
+    default: 20
+    description: Max results
+
+pipeline:
+  - navigate: https://weread.qq.com
+
+  - evaluate: |
+      (async () => {
+        const bookId = '${{ args.book-id }}';
+        const limit = ${{ args.limit }} || 20;
+        const res = await fetch('https://i.weread.qq.com/book/bookmarklist?bookId=' + encodeURIComponent(bookId), { credentials: 'include' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        if (data?.errcode === -2010) throw new Error('Not logged in to WeRead');
+        if (data?.errcode && data.errcode !== 0) throw new Error(data.errmsg || 'WeRead API error');
+        const items = data?.updated || [];
+        const formatDate = (ts) => {
+          if (!ts || ts <= 0) return '-';
+          const d = new Date(ts * 1000 + 8 * 3600000);
+          return d.toISOString().slice(0, 10);
+        };
+        return items.slice(0, limit).map(item => ({
+          chapter: item.chapterName || '',
+          text: item.markText || '',
+          createTime: formatDate(item.createTime),
+        }));
+      })()
+
+columns: [chapter, text, createTime]
