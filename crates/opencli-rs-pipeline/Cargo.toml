@@ -12,3 +12,5 @@ thiserror = { workspace = true }
 async-trait = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+pest = "2"
+pest_derive = "2"
