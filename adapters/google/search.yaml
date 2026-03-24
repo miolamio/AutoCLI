@@ -22,7 +22,7 @@ args:
 
 pipeline:
   - navigate:
-      url: "https://www.google.com/search?q=${{ encodeURIComponent(args.keyword) }}&hl=${{ encodeURIComponent(args.lang) }}&num=${{ args.limit }}"
+      url: "https://www.google.com/search?q=${{ args.keyword | urlencode }}&hl=${{ args.lang | urlencode }}&num=${{ args.limit }}"
       settleMs: 2000
 
   - evaluate: |

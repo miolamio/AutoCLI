@@ -17,7 +17,7 @@ args:
 
 pipeline:
   - navigate:
-      url: "https://s.weibo.com/weibo?q=${{ encodeURIComponent(args.keyword) }}"
+      url: "https://s.weibo.com/weibo?q=${{ args.keyword | urlencode }}"
       settleMs: 2000
 
   - evaluate: |

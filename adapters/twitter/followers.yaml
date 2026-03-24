@@ -31,7 +31,7 @@ pipeline:
       })()
 
   - navigate:
-      url: https://x.com/${{ __result }}
+      url: https://x.com/${{ data }}
       settleMs: 3000
 
   - intercept:
@@ -39,7 +39,7 @@ pipeline:
 
   - evaluate: |
       (() => {
-        const target = ${{ __result | json }};
+        const target = ${{ data | json }};
         const selectors = [
           'a[href="/' + target + '/verified_followers"]',
           'a[href="/' + target + '/followers"]',
