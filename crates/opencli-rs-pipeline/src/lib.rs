@@ -1,6 +1,7 @@
 pub mod context;
 pub mod executor;
 pub mod step_registry;
+pub mod steps;
 pub mod template;
 
 pub use context::PipelineContext;
