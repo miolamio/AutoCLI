@@ -170,10 +170,10 @@ opencli-rs auth
 
 ```bash
 # AI 分析页面并生成适配器
-opencli-rs generate https://www.example.com --goal hot --ai
+opencli-rs generate https://www.moltbook.com/ --goal 'list' --ai
 
 # 搜索商品
-opencli-rs generate https://www.amazon.com/s?k=rust --goal search --ai
+opencli-rs generate https://www.amazon.com/--goal 'search' --ai
 ```
 
 **工作流程：**

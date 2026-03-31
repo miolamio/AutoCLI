@@ -169,10 +169,10 @@ This will:
 
 ```bash
 # AI analyzes the page and generates a working adapter
-opencli-rs generate https://www.example.com --goal hot --ai
+opencli-rs generate https://www.moltbook.com/ --goal 'list' --ai
 
 # Search for products
-opencli-rs generate https://www.amazon.com/s?k=rust --goal search --ai
+opencli-rs generate https://www.amazon.com/ --goal 'search' --ai
 ```
 
 **How it works:**
