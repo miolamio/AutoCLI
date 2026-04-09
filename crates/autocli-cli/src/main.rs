@@ -129,7 +129,11 @@ fn build_cli(registry: &Registry, external_clis: &[ExternalCli]) -> Command {
         )
         .subcommand(
             Command::new("auth")
-                .about("Authenticate with AutoCLI"),
+                .about("Authenticate with AutoCLI")
+                .arg(
+                    Arg::new("site")
+                        .help("Site to authenticate with (e.g. youtube). Opens a browser to log in and saves session cookies for headless use.")
+                ),
         );
 
     app
@@ -690,7 +694,73 @@ async fn main() {
                 return;
             }
             "auth" => {
-                // Open browser to get token
+                // Check if a site argument was provided for Playwright-based session auth
+                if let Some(site_name) = site_matches.get_one::<String>("site") {
+                    // Playwright-based session auth: open a browser to log in and save cookies
+                    let home = std::env::var("HOME")
+                        .or_else(|_| std::env::var("USERPROFILE"))
+                        .unwrap_or_else(|_| ".".to_string());
+                    let auth_dir = std::path::PathBuf::from(&home).join(".autocli").join("auth");
+                    let _ = std::fs::create_dir_all(&auth_dir);
+                    let auth_path = auth_dir.join(format!("{}.json", site_name));
+
+                    let login_url = match site_name.as_str() {
+                        "youtube" => "https://youtube.com".to_string(),
+                        other => format!("https://{}.com", other),
+                    };
+
+                    eprintln!("{}", t(
+                        &format!("🌐 正在打开浏览器登录 {}...", site_name),
+                        &format!("🌐 Opening browser to log in to {}...", site_name),
+                    ));
+                    eprintln!("{}", t(
+                        "   登录后关闭浏览器窗口，会话将自动保存。",
+                        "   Log in, then close the browser window. Your session will be saved automatically.",
+                    ));
+
+                    let status = std::process::Command::new("npx")
+                        .args([
+                            "playwright",
+                            "open",
+                            &format!("--save-storage={}", auth_path.display()),
+                            &login_url,
+                        ])
+                        .status();
+
+                    match status {
+                        Ok(s) if s.success() => {
+                            eprintln!("{}", t(
+                                &format!("✅ 会话已保存到 {}", auth_path.display()),
+                                &format!("✅ Session saved to {}", auth_path.display()),
+                            ));
+                            eprintln!("{}", t(
+                                &format!("   现在可以使用 autocli {} 命令了。", site_name),
+                                &format!("   You can now use autocli {} commands.", site_name),
+                            ));
+                        }
+                        Ok(s) => {
+                            eprintln!("{}", t(
+                                &format!("❌ 浏览器退出，状态码: {}", s.code().unwrap_or(-1)),
+                                &format!("❌ Browser exited with code: {}", s.code().unwrap_or(-1)),
+                            ));
+                            std::process::exit(1);
+                        }
+                        Err(e) => {
+                            eprintln!("{}", t(
+                                &format!("❌ 无法启动 Playwright: {}", e),
+                                &format!("❌ Failed to launch Playwright: {}", e),
+                            ));
+                            eprintln!("{}", t(
+                                "   请先安装: npm install -g playwright",
+                                "   Install first: npm install -g playwright",
+                            ));
+                            std::process::exit(1);
+                        }
+                    }
+                    return;
+                }
+
+                // Token-based auth flow (original)
                 let token_url = "https://autocli.ai/get-token";
                 eprintln!("{}", t(
                     "🔑 请在浏览器中获取 Token:",
@@ -787,8 +857,8 @@ async fn main() {
                     std::env::var("AUTOCLI_DAEMON_PORT").ok()
                         .and_then(|s| s.parse().ok()).unwrap_or(19925),
                 );
-                match bridge.connect().await {
-                    Ok(page) => {
+                match bridge.connect(None).await {
+                    Ok((page, _pw_bridge)) => {
                         let options = autocli_ai::ExploreOptions {
                             timeout: Some(120),
                             max_scrolls: Some(3),
@@ -820,8 +890,8 @@ async fn main() {
                     std::env::var("AUTOCLI_DAEMON_PORT").ok()
                         .and_then(|s| s.parse().ok()).unwrap_or(19925),
                 );
-                match bridge.connect().await {
-                    Ok(page) => {
+                match bridge.connect(None).await {
+                    Ok((page, _pw_bridge)) => {
                         let result = autocli_ai::cascade(page.as_ref(), url).await;
                         let _ = page.close().await;
                         match result {
@@ -846,8 +916,8 @@ async fn main() {
                     std::env::var("AUTOCLI_DAEMON_PORT").ok()
                         .and_then(|s| s.parse().ok()).unwrap_or(19925),
                 );
-                match bridge.connect().await {
-                    Ok(page) => {
+                match bridge.connect(None).await {
+                    Ok((page, _pw_bridge)) => {
                         if use_ai {
                             // Require token for --ai
                             let token = require_token();

@@ -5,6 +5,7 @@ use tracing::{debug, info, warn};
 
 use crate::daemon_client::DaemonClient;
 use crate::page::DaemonPage;
+use crate::playwright::{auth_state_path, PlaywrightBridge};
 
 const DEFAULT_PORT: u16 = 19925;
 const READY_TIMEOUT: Duration = Duration::from_secs(10);
@@ -30,7 +31,43 @@ impl BrowserBridge {
     }
 
     /// Connect to the daemon, starting it if necessary, and return a page.
-    pub async fn connect(&mut self) -> Result<Arc<dyn IPage>, CliError> {
+    ///
+    /// If `site` is provided and `~/.autocli/auth/{site}.json` exists, uses the
+    /// Playwright headless bridge instead of the daemon+extension flow. The
+    /// returned `Option<PlaywrightBridge>` must be kept alive for the duration of
+    /// the pipeline (dropping it kills the headless browser).
+    pub async fn connect(
+        &mut self,
+        site: Option<&str>,
+    ) -> Result<(Arc<dyn IPage>, Option<PlaywrightBridge>), CliError> {
+        // Try Playwright path if we have auth state for this site
+        if let Some(site_name) = site {
+            if let Some(auth_path) = auth_state_path(site_name) {
+                if auth_path.exists() {
+                    info!(
+                        site = site_name,
+                        auth = %auth_path.display(),
+                        "Auth state found, using Playwright headless bridge"
+                    );
+                    let (page, bridge) = PlaywrightBridge::launch(&auth_path).await?;
+                    return Ok((page, Some(bridge)));
+                } else {
+                    debug!(
+                        site = site_name,
+                        path = %auth_path.display(),
+                        "No auth state found, falling back to daemon"
+                    );
+                }
+            }
+        }
+
+        // Fallback: existing daemon + Chrome extension flow
+        let page = self.connect_daemon().await?;
+        Ok((page, None))
+    }
+
+    /// Original daemon-based connection flow.
+    async fn connect_daemon(&mut self) -> Result<Arc<dyn IPage>, CliError> {
         let client = Arc::new(DaemonClient::new(self.port));
 
         // Step 1: Check Chrome is running

@@ -57,7 +57,7 @@ async fn execute_command_inner(
     if cmd.needs_browser() {
         // Browser session
         let mut bridge = BrowserBridge::new(daemon_port());
-        let page = bridge.connect().await?;
+        let (page, _playwright_bridge) = bridge.connect(Some(&cmd.site)).await?;
 
         // Pre-navigate to domain if set, but ONLY if the pipeline doesn't
         // start with its own navigate step (to avoid double navigation).
