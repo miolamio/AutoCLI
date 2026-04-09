@@ -47,20 +47,38 @@ impl PlaywrightBridge {
             CliError::browser_connect("Failed to capture Playwright bridge stdout")
         })?;
 
-        let endpoint = tokio::time::timeout(
+        let endpoint = match tokio::time::timeout(
             std::time::Duration::from_secs(STARTUP_TIMEOUT_SECS),
             read_cdp_endpoint(stdout),
         )
         .await
-        .map_err(|_| CliError::Timeout {
-            message: format!(
-                "Playwright bridge did not produce CDP endpoint within {STARTUP_TIMEOUT_SECS}s"
-            ),
-            suggestions: vec![
-                "Make sure Playwright browsers are installed: npx playwright install chromium"
-                    .into(),
-            ],
-        })??;
+        {
+            Ok(Ok(ep)) => ep,
+            Ok(Err(e)) => {
+                let stderr_msg = read_child_stderr(&mut child).await;
+                let detail = if stderr_msg.is_empty() {
+                    e.to_string()
+                } else {
+                    format!("{e}\nBridge stderr: {stderr_msg}")
+                };
+                return Err(CliError::browser_connect(detail));
+            }
+            Err(_) => {
+                let stderr_msg = read_child_stderr(&mut child).await;
+                let detail = if stderr_msg.is_empty() {
+                    format!("Playwright bridge did not produce CDP endpoint within {STARTUP_TIMEOUT_SECS}s")
+                } else {
+                    format!("Playwright bridge timed out ({STARTUP_TIMEOUT_SECS}s). Bridge stderr: {stderr_msg}")
+                };
+                let _ = child.start_kill();
+                return Err(CliError::Timeout {
+                    message: detail,
+                    suggestions: vec![
+                        "Make sure Playwright browsers are installed: npx playwright install chromium".into(),
+                    ],
+                });
+            }
+        };
 
         info!(endpoint = %endpoint, "Playwright bridge ready, connecting CdpPage");
         let page = CdpPage::connect(&endpoint).await?;
@@ -74,6 +92,32 @@ impl Drop for PlaywrightBridge {
         // Best-effort kill of the child process
         debug!("Dropping PlaywrightBridge, killing child process");
         let _ = self.child.start_kill();
+    }
+}
+
+/// Read stderr from the child process (best-effort, for error reporting).
+async fn read_child_stderr(child: &mut tokio::process::Child) -> String {
+    if let Some(stderr) = child.stderr.take() {
+        let mut buf = String::new();
+        let mut reader = tokio::io::BufReader::new(stderr);
+        // Read up to 4KB of stderr
+        match tokio::time::timeout(
+            std::time::Duration::from_millis(500),
+            async {
+                use tokio::io::AsyncReadExt;
+                let mut tmp = vec![0u8; 4096];
+                if let Ok(n) = reader.read(&mut tmp).await {
+                    buf = String::from_utf8_lossy(&tmp[..n]).to_string();
+                }
+            },
+        )
+        .await
+        {
+            _ => {}
+        }
+        buf.trim().to_string()
+    } else {
+        String::new()
     }
 }
 
@@ -291,6 +335,43 @@ process.exit(0);
             err.to_string().contains("without producing a CDP endpoint"),
             "Unexpected error: {err}"
         );
+    }
+
+    #[tokio::test]
+    async fn test_timeout_when_no_cdp_line_produced() {
+        // Script that hangs forever without producing a CDP line
+        let mut script = NamedTempFile::new().unwrap();
+        writeln!(
+            script,
+            r#"#!/usr/bin/env node
+console.log("Starting up...");
+// Hang forever
+setInterval(() => {{}}, 60000);
+"#
+        )
+        .unwrap();
+
+        let script_path = script.path().to_path_buf();
+
+        let mut child = tokio::process::Command::new("node")
+            .arg(&script_path)
+            .stdout(std::process::Stdio::piped())
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .expect("node must be available");
+
+        let stdout = child.stdout.take().unwrap();
+        // Use a short timeout (2s) for the test
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            read_cdp_endpoint(stdout),
+        )
+        .await;
+
+        let _ = child.start_kill();
+
+        // Should have timed out
+        assert!(result.is_err(), "Expected timeout, got: {:?}", result);
     }
 
     #[test]

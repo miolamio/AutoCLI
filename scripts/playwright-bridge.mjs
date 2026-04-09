@@ -4,6 +4,7 @@
 
 import { chromium } from 'playwright';
 import http from 'node:http';
+import net from 'node:net';
 
 function parseArgs() {
   const args = process.argv.slice(2);
@@ -66,11 +67,22 @@ async function getPageDebuggerUrl(port) {
   });
 }
 
+function getFreePort() {
+  return new Promise((resolve, reject) => {
+    const srv = net.createServer();
+    srv.listen(0, () => {
+      const port = srv.address().port;
+      srv.close(() => resolve(port));
+    });
+    srv.on('error', reject);
+  });
+}
+
 async function main() {
   const { storagePath } = parseArgs();
 
-  // Pick a random port for remote debugging
-  const debugPort = 9222 + Math.floor(Math.random() * 10000);
+  // Find a free port for remote debugging
+  const debugPort = await getFreePort();
 
   const launchOptions = {
     headless: true,
