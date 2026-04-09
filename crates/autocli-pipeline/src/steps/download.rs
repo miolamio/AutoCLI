@@ -585,7 +585,9 @@ mod tests {
     #[tokio::test]
     async fn test_download_with_url_in_data() {
         let step = DownloadStep;
-        let params = json!({"type": "article"});
+        // Use "file" type (not "article") so it goes through the default metadata-only path
+        // which supports extracting URL from data when not present in params.
+        let params = json!({"type": "file"});
         let data = json!({"url": "https://example.com/article.pdf", "title": "Test"});
         let result = step
             .execute(None, &params, &data, &empty_args())
@@ -593,7 +595,7 @@ mod tests {
             .unwrap();
         assert_eq!(result["download_url"], "https://example.com/article.pdf");
         assert_eq!(result["download_path"], "article.pdf");
-        assert_eq!(result["download_type"], "article");
+        assert_eq!(result["download_type"], "file");
         assert_eq!(result["title"], "Test");
     }
 
